@@ -1,8 +1,9 @@
 #include <sourcemod>
 #include <sourcecomms>
+#include <sdktools>
 #include <Discord>
 
-#define PLUGIN_VERSION "1.0"
+#define PLUGIN_VERSION "1.1"
 
 #pragma newdecls required
 
@@ -39,7 +40,7 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	char currentMap[PLATFORM_MAX_PATH];
 	GetCurrentMap(currentMap, sizeof(currentMap));
 
-	Format(sMessage, sizeof(sMessage), "*%s - %s* ```%s```", currentMap, sTime, message);
+	Format(sMessage, sizeof(sMessage), "*%s (CT: %d | T: %d) - %s* ```%s```", currentMap, GetTeamScore(3), GetTeamScore(2), sTime, message);
 
 	if(StrContains(sMessage, "\"") != -1)
 		ReplaceString(sMessage, sizeof(sMessage), "\"", "");
