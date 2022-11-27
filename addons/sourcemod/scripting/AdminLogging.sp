@@ -1,9 +1,6 @@
 #include <sourcemod>
-#include <sourcecomms>
 #include <sdktools>
 #include <Discord>
-
-#define PLUGIN_VERSION "1.1"
 
 #pragma newdecls required
 
@@ -12,7 +9,7 @@ public Plugin myinfo =
 	name = "AdminLogging",
 	author = "inGame, maxime1907",
 	description = "Admin logs saved to Discord",
-	version = PLUGIN_VERSION,
+	version = "1.1.0",
 	url = "https://nide.gg"
 };
 
