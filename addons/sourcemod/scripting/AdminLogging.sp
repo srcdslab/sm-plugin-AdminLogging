@@ -1,17 +1,26 @@
 #include <sourcemod>
 #include <sdktools>
-#include <Discord>
+#include <discordWebhookAPI>
 
 #pragma newdecls required
+
+ConVar g_cvWebhook;
 
 public Plugin myinfo = 
 {
 	name = "AdminLogging",
 	author = "inGame, maxime1907",
 	description = "Admin logs saved to Discord",
-	version = "1.1.0",
+	version = "1.2.0",
 	url = "https://nide.gg"
 };
+
+public void OnPluginStart()
+{
+    g_cvWebhook = CreateConVar("sm_adminlogging_webhook", "", "The webhook URL of your Discord channel.", FCVAR_PROTECTED);
+
+    AutoExecConfig(true);
+}
 
 public Action OnLogAction(Handle source, Identity ident, int client, int target, const char[] message)
 {
@@ -42,7 +51,20 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	if(StrContains(sMessage, "\"") != -1)
 		ReplaceString(sMessage, sizeof(sMessage), "\"", "");
 
-	Discord_SendMessage(sWebhook, sMessage);
+	char szWebhookURL[1000];
+	g_cvWebhook.GetString(szWebhookURL, sizeof szWebhookURL);
+
+	Webhook webhook = new Webhook(sMessage);
+	webhook.Execute(szWebhookURL, OnWebHookExecuted);
+	delete webhook;
 
 	return Plugin_Handled;
+}
+
+public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
+{
+    if (response.Status != HTTPStatus_OK)
+    {
+        LogError("Failed to send adminlogging webhook");
+    }
 }
