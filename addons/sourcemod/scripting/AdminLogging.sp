@@ -11,7 +11,7 @@ public Plugin myinfo =
 	name = "AdminLogging",
 	author = "inGame, maxime1907",
 	description = "Admin logs saved to Discord",
-	version = "1.2.0",
+	version = "1.2.1",
 	url = "https://nide.gg"
 };
 
@@ -34,9 +34,6 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	
 	if (adminID == INVALID_ADMIN_ID && client > 0)
 		return Plugin_Continue;
-
-	char sWebhook[64];
-	Format(sWebhook, sizeof(sWebhook), "adminlogs");
 
 	char sMessage[4096];
 	char sTime[64];
