@@ -50,18 +50,71 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 
 	char szWebhookURL[1000];
 	g_cvWebhook.GetString(szWebhookURL, sizeof szWebhookURL);
-
+	if(!szWebhookURL[0])
+	{
+		LogError("[Adminlogging] No webhook found or specified.");
+		return Plugin_Handled;
+	}
+	
 	Webhook webhook = new Webhook(sMessage);
-	webhook.Execute(szWebhookURL, OnWebHookExecuted);
-	delete webhook;
+	
+	DataPack pack = new DataPack();
+	pack.WriteCell(view_as<int>(webhook));
+	pack.WriteString(szWebhookURL);
+	
+	webhook.Execute(szWebhookURL, OnWebHookExecuted, pack);
 
 	return Plugin_Handled;
 }
 
 public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 {
-    if (response.Status != HTTPStatus_OK)
-    {
-        LogError("Failed to send adminlogging webhook");
-    }
+	static int retries;
+	
+	pack.Reset();
+	Webhook hook = view_as<Webhook>(pack.ReadCell());
+
+	if (response.Status != HTTPStatus_OK)
+	{
+		if(retries < 3)
+			PrintToServer("[AdminLogging] Failed to send the webhook. Resending it .. (%d/3)", retries);
+		
+		else if(retries >= 3)
+		{
+			LogError("[AdminLogging] Could not send the webhook after %d retries.", retries);
+			delete hook;
+			delete pack;
+			return;
+		}
+		
+		char webhookURL[PLATFORM_MAX_PATH];
+		pack.ReadString(webhookURL, sizeof(webhookURL));
+		
+		DataPack newPack;
+		CreateDataTimer(0.5, ExecuteWebhook_Timer, newPack);
+		newPack.WriteCell(view_as<int>(hook));
+		newPack.WriteString(webhookURL);
+		delete pack;
+		retries++;
+		return;
+	}
+	
+	delete pack;
+	delete hook;
+	retries = 0;
+}
+
+Action ExecuteWebhook_Timer(Handle timer, DataPack pack)
+{
+	pack.Reset();
+	Webhook hook = view_as<Webhook>(pack.ReadCell());
+	
+	char webhookURL[PLATFORM_MAX_PATH];
+	pack.ReadString(webhookURL, sizeof(webhookURL));
+	
+	DataPack newPack = new DataPack();
+	newPack.WriteCell(view_as<int>(hook));
+	newPack.WriteString(webhookURL);	
+	hook.Execute(webhookURL, OnWebHookExecuted, newPack);
+	return Plugin_Continue;
 }
