@@ -21,8 +21,8 @@ project:
       type: git
       repo: https://github.com/srcdslab/sm-plugin-AutoRecorder
       unpack:
-      - source: /include
-        dest: /addons/sourcemod/scripting/include
+      - source: /addons
+        dest: /addons
 
   root: /
   output: /addons/sourcemod/plugins
