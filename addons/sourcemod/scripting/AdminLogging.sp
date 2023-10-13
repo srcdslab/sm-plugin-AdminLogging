@@ -5,7 +5,7 @@
 #pragma newdecls required
 
 #undef REQUIRE_PLUGIN
-#include <AutoRecorder>
+#tryinclude <AutoRecorder>
 #define REQUIRE_PLUGIN
 
 #define WEBHOOK_URL_MAX_SIZE	1000
