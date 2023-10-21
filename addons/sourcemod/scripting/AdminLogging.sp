@@ -10,7 +10,7 @@
 
 #define WEBHOOK_URL_MAX_SIZE	1000
 
-ConVar g_cvWebhook, g_cvWebhookRetry;
+ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername
 ConVar g_cvChannelType, g_cvThreadID;
 
 char g_sMap[PLATFORM_MAX_PATH];
@@ -22,14 +22,16 @@ public Plugin myinfo =
 	name = "AdminLogging",
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3",
-	url = "https://nide.gg"
+	version = "1.3.1",
+	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
 public void OnPluginStart()
 {
 	g_cvWebhook = CreateConVar("sm_adminlogging_webhook", "", "The webhook URL of your Discord channel.", FCVAR_PROTECTED);
 	g_cvWebhookRetry = CreateConVar("sm_adminlogging_webhook_retry", "3", "Number of retries if webhook fails.", FCVAR_PROTECTED);
+	g_cvAvatar = CreateConVar("sm_adminlogging_avatar", "https://avatars.githubusercontent.com/u/110772618?s=200&v=4", "URL to Avatar image.");
+	g_cvUsername = CreateConVar("sm_adminlogging_username", "Admin Logging", "Discord username.");
 	g_cvChannelType = CreateConVar("sm_adminlogging_channel_type", "0", "Type of your channel: (1 = Thread, 0 = Classic Text channel");
 
 	/* Thread config */
@@ -122,6 +124,16 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 
 stock void SendWebHook(char sMessage[4096], char sWebhookURL[WEBHOOK_URL_MAX_SIZE])
 {
+	/* Webhook UserName */
+	char sName[128];
+	g_cvUsername.GetString(sName, sizeof(sName));
+	if (strlen(sName) < 1)
+		FormatEx(sName, sizeof(sName), "Admin Logging");
+
+	/* Webhook Avatar */
+	char sAvatar[256];
+	g_cvAvatar.GetString(sAvatar, sizeof(sAvatar));
+
 	Webhook webhook = new Webhook(sMessage);
 
 	char sThreadID[32];
@@ -135,6 +147,9 @@ stock void SendWebHook(char sMessage[4096], char sWebhookURL[WEBHOOK_URL_MAX_SIZ
 		delete webhook;
 		return;
 	}
+
+	webhook.SetUsername(sName);
+	webhook.SetAvatarURL(sAvatar);
 
 	DataPack pack = new DataPack();
 
