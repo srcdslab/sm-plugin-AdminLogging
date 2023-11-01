@@ -1,13 +1,15 @@
+#pragma newdecls required
+
 #include <sourcemod>
 #include <sdktools>
 #include <discordWebhookAPI>
 
-#pragma newdecls required
-
 #undef REQUIRE_PLUGIN
 #tryinclude <AutoRecorder>
+#tryinclude <ExtendedDiscord>
 #define REQUIRE_PLUGIN
 
+#define PLUGIN_NAME "AdminLogging"
 #define WEBHOOK_URL_MAX_SIZE	1000
 
 ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername
@@ -15,14 +17,15 @@ ConVar g_cvChannelType, g_cvThreadID;
 
 char g_sMap[PLATFORM_MAX_PATH];
 
+bool g_Plugin_ExtDiscord = false;
 bool g_Plugin_AutoRecorder = false;
 
 public Plugin myinfo = 
 {
-	name = "AdminLogging",
+	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.1",
+	version = "1.3.2",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -43,23 +46,28 @@ public void OnPluginStart()
 public void OnAllPluginsLoaded()
 {
 	g_Plugin_AutoRecorder = LibraryExists("AutoRecorder");
+	g_Plugin_ExtDiscord = LibraryExists("ExtendedDiscord");
 }
 
 public void OnLibraryAdded(const char[] sName)
 {
 	if (strcmp(sName, "AutoRecorder", false) == 0)
 		g_Plugin_AutoRecorder = true;
+	if (strcmp(sName, "ExtendedDiscord", false) == 0)
+		g_Plugin_ExtDiscord = true;
 }
 
 public void OnLibraryRemoved(const char[] sName)
 {
 	if (strcmp(sName, "AutoRecorder", false) == 0)
 		g_Plugin_AutoRecorder = false;
+	if (strcmp(sName, "AutoRecorder", false) == 0)
+		g_Plugin_AutoRecorder = false;
 }
 
-public void OnMapStart()
+public void OnMapInit(const char[] mapName)
 {
-	GetCurrentMap(g_sMap, sizeof(g_sMap));
+	FormatEx(g_sMap, sizeof(g_sMap), mapName);
 }
 
 public Action OnLogAction(Handle source, Identity ident, int client, int target, const char[] message)
@@ -69,7 +77,7 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 
 	if(!sWebhookURL[0])
 	{
-		LogError("[Adminlogging] No webhook found or specified.");
+		LogError("[%s] No webhook found or specified.", PLUGIN_NAME);
 		return Plugin_Handled;
 	}
 
@@ -99,7 +107,7 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 		{
 			iCount = AutoRecorder_GetDemoRecordCount();
 			iTick = AutoRecorder_GetDemoRecordingTick();
-			retValTime = AutoRecorder_GetDemoRecordingTime()
+			retValTime = AutoRecorder_GetDemoRecordingTime();
 		}
 		if (retValTime == -1)
 			sDate = "N/A";
@@ -127,8 +135,6 @@ stock void SendWebHook(char sMessage[4096], char sWebhookURL[WEBHOOK_URL_MAX_SIZ
 	/* Webhook UserName */
 	char sName[128];
 	g_cvUsername.GetString(sName, sizeof(sName));
-	if (strlen(sName) < 1)
-		FormatEx(sName, sizeof(sName), "Admin Logging");
 
 	/* Webhook Avatar */
 	char sAvatar[256];
@@ -143,13 +149,15 @@ stock void SendWebHook(char sMessage[4096], char sWebhookURL[WEBHOOK_URL_MAX_SIZ
 
 	if (IsThread && !sThreadID[0])
 	{
-		LogError("[Admin-Logging] ThreadID not found or specified.");
+		LogError("[%s] ThreadID not found or specified.", PLUGIN_NAME);
 		delete webhook;
 		return;
 	}
 
-	webhook.SetUsername(sName);
-	webhook.SetAvatarURL(sAvatar);
+	if (strlen(sName) > 0)
+		webhook.SetUsername(sName);
+	if (strlen(sAvatar) > 0)
+		webhook.SetAvatarURL(sAvatar);
 
 	DataPack pack = new DataPack();
 
@@ -178,36 +186,26 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 	delete pack;
 
-	if (!IsThreadReply && response.Status != HTTPStatus_OK)
+	if ((!IsThreadReply && response.Status != HTTPStatus_OK) || (IsThreadReply && response.Status != HTTPStatus_NoContent))
 	{
-		if (retries < g_cvWebhookRetry.IntValue)
-		{
-			PrintToServer("[AdminLogging] Failed to send the webhook. Resending it .. (%d/%d)", retries, g_cvWebhookRetry.IntValue);
+		if (retries < g_cvWebhookRetry.IntValue) {
+			PrintToServer("[%s] Failed to send the webhook. Resending it .. (%d/%d)", PLUGIN_NAME, retries, g_cvWebhookRetry.IntValue);
 			SendWebHook(sMessage, sWebhookURL);
 			retries++;
 			return;
-		}
-		else
-		{
-			LogError("[AdminLogging] Failed to send the webhook after %d retries, aborting.", retries);
-			LogError("[AdminLogging] Failed message : %s", sMessage);
-			return;
-		}
-	}
-
-	if (IsThreadReply && response.Status != HTTPStatus_NoContent)
-	{
-		if (retries < g_cvWebhookRetry.IntValue)
-		{
-			PrintToServer("[AdminLogging] Failed to send the webhook. Resending it .. (%d/%d)", retries + 1, g_cvWebhookRetry.IntValue);
-			SendWebHook(sMessage, sWebhookURL);
-			retries++;
-			return;
-		}
-		else
-		{
-			LogError("[AdminLogging] Failed to send the webhook after %d retries, aborting. (Message: %s)", retries, sMessage);
-			return;
+		} else {
+			if (!g_Plugin_ExtDiscord)
+			{
+				LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries);
+				LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
+			}
+		#if defined _extendeddiscord_included
+			else
+			{
+				ExtendedDiscord_LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries);
+				ExtendedDiscord_LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
+			}
+		#endif
 		}
 	}
 
