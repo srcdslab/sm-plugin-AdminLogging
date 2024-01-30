@@ -10,7 +10,6 @@
 #define REQUIRE_PLUGIN
 
 #define PLUGIN_NAME "AdminLogging"
-#define WEBHOOK_URL_MAX_SIZE	1000
 
 ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername
 ConVar g_cvChannelType, g_cvThreadID;
@@ -25,7 +24,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.3",
+	version = "1.3.4",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -91,7 +90,7 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	if (adminID == INVALID_ADMIN_ID && client > 0)
 		return Plugin_Continue;
 
-	char sMessage[4096];
+	char sMessage[WEBHOOK_MSG_MAX_SIZE];
 	char sTime[64];
 	int iTime = GetTime();
 	FormatTime(sTime, sizeof(sTime), "%m/%d/%Y @ %H:%M:%S", iTime);
@@ -130,7 +129,7 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	return Plugin_Continue;
 }
 
-stock void SendWebHook(char sMessage[4096], char sWebhookURL[WEBHOOK_URL_MAX_SIZE])
+stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEBHOOK_URL_MAX_SIZE])
 {
 	/* Webhook UserName */
 	char sName[128];
@@ -180,7 +179,7 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 	bool IsThreadReply = pack.ReadCell();
 
-	char sMessage[4096], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
+	char sMessage[WEBHOOK_MSG_MAX_SIZE], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
 	pack.ReadString(sMessage, sizeof(sMessage));
 	pack.ReadString(sWebhookURL, sizeof(sWebhookURL));
 
