@@ -10,6 +10,7 @@
 #define REQUIRE_PLUGIN
 
 #define PLUGIN_NAME "AdminLogging"
+#define MAX_RAMDOM_INT 10000
 
 ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername
 ConVar g_cvChannelType, g_cvThreadID;
@@ -24,7 +25,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.4",
+	version = "1.3.5",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -129,7 +130,7 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	return Plugin_Continue;
 }
 
-stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEBHOOK_URL_MAX_SIZE])
+stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEBHOOK_URL_MAX_SIZE], int iMsgIndex = -1, int iRetries = 0)
 {
 	/* Webhook UserName */
 	char sName[128];
@@ -160,6 +161,12 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEB
 
 	DataPack pack = new DataPack();
 
+	if (iMsgIndex == -1)
+		iMsgIndex = GetRandomInt(1, MAX_RAMDOM_INT);
+
+	pack.WriteCell(iMsgIndex);
+	pack.WriteCell(iRetries);
+
 	if (IsThread && strlen(sThreadID) > 0)
 		pack.WriteCell(1);
 	else
@@ -174,8 +181,12 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEB
 
 public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 {
-	static int retries = 0;
+	int retries[MAX_RAMDOM_INT];
+
 	pack.Reset();
+	int iMsgIndex = pack.ReadCell();
+	int iRetries = pack.ReadCell();
+	retries[iMsgIndex] = iRetries;
 
 	bool IsThreadReply = pack.ReadCell();
 
@@ -187,26 +198,49 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 	if ((!IsThreadReply && response.Status != HTTPStatus_OK) || (IsThreadReply && response.Status != HTTPStatus_NoContent))
 	{
-		if (retries < g_cvWebhookRetry.IntValue) {
-			PrintToServer("[%s] Failed to send the webhook. Resending it .. (%d/%d)", PLUGIN_NAME, retries, g_cvWebhookRetry.IntValue);
-			SendWebHook(sMessage, sWebhookURL);
-			retries++;
+		if (retries[iMsgIndex] < g_cvWebhookRetry.IntValue) {
+			retries[iMsgIndex]++;
+			float fTimer = 1.0 * (retries[iMsgIndex] + 1);
+
+			DataPack Datapack = new DataPack();
+			Datapack.WriteString(sMessage);
+			Datapack.WriteString(sWebhookURL);
+			Datapack.WriteCell(iMsgIndex);
+			Datapack.WriteCell(retries[iMsgIndex]);
+
+			CreateTimer(fTimer, Timer_ResendWebhook, Datapack);
+			PrintToServer("[%s] Failed to send the webhook (ID: %d). Resending it in %0.1f seconds.. (%d/%d)", PLUGIN_NAME, iMsgIndex, fTimer, retries[iMsgIndex], g_cvWebhookRetry.IntValue);
 			return;
 		} else {
 			if (!g_Plugin_ExtDiscord)
 			{
-				LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries);
+				LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries[iMsgIndex]);
 				LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
 			}
 		#if defined _extendeddiscord_included
 			else
 			{
-				ExtendedDiscord_LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries);
+				ExtendedDiscord_LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries[iMsgIndex]);
 				ExtendedDiscord_LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
 			}
 		#endif
 		}
 	}
 
-	retries = 0;
+	retries[iMsgIndex] = 0;
+}
+
+public Action Timer_ResendWebhook(Handle timer, DataPack Datapack)
+{
+	char sMessage[WEBHOOK_MSG_MAX_SIZE], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
+
+	Datapack.Reset();
+	Datapack.ReadString(sMessage, sizeof(sMessage));
+	Datapack.ReadString(sWebhookURL, sizeof(sWebhookURL));
+	int iMsgIndex = Datapack.ReadCell();
+	int iRetries = Datapack.ReadCell();
+	delete Datapack;
+
+	SendWebHook(sMessage, sWebhookURL, iMsgIndex, iRetries);
+	return Plugin_Stop;
 }
