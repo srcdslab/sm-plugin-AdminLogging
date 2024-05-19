@@ -25,7 +25,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.5",
+	version = "1.3.6",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -72,6 +72,10 @@ public void OnMapInit(const char[] mapName)
 
 public Action OnLogAction(Handle source, Identity ident, int client, int target, const char[] message)
 {
+	// If this user has no admin and is NOT the server
+	// let the core log this
+	if(client == 0) return Plugin_Continue;
+
 	char sWebhookURL[WEBHOOK_URL_MAX_SIZE];
 	g_cvWebhook.GetString(sWebhookURL, sizeof sWebhookURL);
 
@@ -80,10 +84,6 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 		LogError("[%s] No webhook found or specified.", PLUGIN_NAME);
 		return Plugin_Handled;
 	}
-
-	// If this user has no admin and is NOT the server
-	// let the core log this
-	if(client == 0) return Plugin_Continue;
 
 	// Get the admin ID
 	AdminId adminID;
@@ -181,7 +181,7 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEB
 
 public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 {
-	int retries[MAX_RAMDOM_INT];
+	int retries[MAX_RAMDOM_INT + 1];
 
 	pack.Reset();
 	int iMsgIndex = pack.ReadCell();
