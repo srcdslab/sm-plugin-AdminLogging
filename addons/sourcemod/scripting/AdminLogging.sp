@@ -20,12 +20,22 @@ char g_sMap[PLATFORM_MAX_PATH];
 bool g_Plugin_ExtDiscord = false;
 bool g_Plugin_AutoRecorder = false;
 
+GlobalForward g_hForward_StatusOK;
+GlobalForward g_hForward_StatusNotOK;
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	g_hForward_StatusOK = CreateGlobalForward("AdminLogging_OnPluginOK", ET_Ignore);
+	g_hForward_StatusNotOK = CreateGlobalForward("AdminLogging_OnPluginNotOK", ET_Ignore);
+	return APLRes_Success;
+}
+
 public Plugin myinfo = 
 {
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.6",
+	version = "1.3.7",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -45,8 +55,23 @@ public void OnPluginStart()
 
 public void OnAllPluginsLoaded()
 {
+	SendForward_Available();
+
 	g_Plugin_AutoRecorder = LibraryExists("AutoRecorder");
 	g_Plugin_ExtDiscord = LibraryExists("ExtendedDiscord");
+}
+
+public void OnPluginPauseChange(bool pause)
+{
+	if (pause)
+		SendForward_NotAvailable();
+	else
+		SendForward_Available();
+}
+
+public void OnPluginEnd()
+{
+	SendForward_NotAvailable();
 }
 
 public void OnLibraryAdded(const char[] sName)
@@ -243,4 +268,16 @@ public Action Timer_ResendWebhook(Handle timer, DataPack Datapack)
 
 	SendWebHook(sMessage, sWebhookURL, iMsgIndex, iRetries);
 	return Plugin_Stop;
+}
+
+stock void SendForward_Available()
+{
+	Call_StartForward(g_hForward_StatusOK);
+	Call_Finish();
+}
+
+stock void SendForward_NotAvailable()
+{
+	Call_StartForward(g_hForward_StatusNotOK);
+	Call_Finish();
 }
