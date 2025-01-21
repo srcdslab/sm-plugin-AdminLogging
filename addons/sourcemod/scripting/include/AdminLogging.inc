@@ -20,7 +20,7 @@ forward void AdminLogging_OnPluginNotOK();
 public SharedPlugin __pl_adminlogging = 
 {
 	name = "AdminLogging",
-	file = "adminlogging.smx",
+	file = "AdminLogging.smx",
 #if defined REQUIRE_PLUGIN
 	required = 1,
 #else
