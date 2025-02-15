@@ -25,7 +25,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.6",
+	version = "1.3.7",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -53,7 +53,7 @@ public void OnLibraryAdded(const char[] sName)
 {
 	if (strcmp(sName, "AutoRecorder", false) == 0)
 		g_Plugin_AutoRecorder = true;
-	if (strcmp(sName, "ExtendedDiscord", false) == 0)
+	else if (strcmp(sName, "ExtendedDiscord", false) == 0)
 		g_Plugin_ExtDiscord = true;
 }
 
@@ -61,7 +61,7 @@ public void OnLibraryRemoved(const char[] sName)
 {
 	if (strcmp(sName, "AutoRecorder", false) == 0)
 		g_Plugin_AutoRecorder = false;
-	if (strcmp(sName, "ExtendedDiscord", false) == 0)
+	else if (strcmp(sName, "ExtendedDiscord", false) == 0)
 		g_Plugin_ExtDiscord = false;
 }
 
