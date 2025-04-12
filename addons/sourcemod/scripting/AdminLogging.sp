@@ -17,6 +17,7 @@ ConVar g_cvChannelType, g_cvThreadID;
 
 char g_sMap[PLATFORM_MAX_PATH];
 
+bool g_bLate = false;
 bool g_Plugin_ExtDiscord = false;
 bool g_Plugin_AutoRecorder = false;
 
@@ -25,9 +26,15 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.7",
+	version = "1.3.8",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	g_bLate = late;
+	return APLRes_Success;
+}
 
 public void OnPluginStart()
 {
@@ -41,6 +48,9 @@ public void OnPluginStart()
 	g_cvThreadID = CreateConVar("sm_adminlogging_threadid", "0", "If thread_id is provided, the message will send in that thread.", FCVAR_PROTECTED);
 
 	AutoExecConfig(true);
+
+	if (g_bLate)
+		GetCurrentMap(g_sMap, sizeof(g_sMap));
 }
 
 public void OnAllPluginsLoaded()
@@ -91,6 +101,18 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	if (adminID == INVALID_ADMIN_ID && client > 0)
 		return Plugin_Continue;
 
+	char sEscapedMessage[WEBHOOK_MSG_MAX_SIZE];
+	FormatEx(sEscapedMessage, sizeof(sEscapedMessage), "%s", message);
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "`", "\\`");
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "*", "\\*");
+	// ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "_", "\\_"); // Not used because maps can have "_"
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "~", "\\~");
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "|", "\\|");
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "> ", ">");
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "/", "୵"); // Prevent URLs from being embedded
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "@", "ⓐ"); // Because it is a webhook, it bypasses the permission
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "\"", ""); // Prevent messages from being cut off
+
 	char sMessage[WEBHOOK_MSG_MAX_SIZE];
 	char sTime[64];
 	int iTime = GetTime();
@@ -115,15 +137,12 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 			FormatTime(sDate, sizeof(sDate), "%d.%m.%Y @ %H:%M", retValTime);
 		#endif
 		Format(sMessage, sizeof(sMessage), "%s *(CT: %d | T: %d) - %s* - Demo: %d @ Tick: ≈ %d *(Started %s)* ```%s```",
-			g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, iCount, iTick, sDate, message);
+			g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, iCount, iTick, sDate, sEscapedMessage);
 	}
 	else
 	{
-		Format(sMessage, sizeof(sMessage), "%s *(CT: %d | T: %d) - %s* ```%s```", g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, message);
+		Format(sMessage, sizeof(sMessage), "%s *(CT: %d | T: %d) - %s* ```%s```", g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, sEscapedMessage);
 	}
-
-	if(StrContains(sMessage, "\"") != -1)
-		ReplaceString(sMessage, sizeof(sMessage), "\"", "");
 
 	SendWebHook(sMessage, sWebhookURL);
 
