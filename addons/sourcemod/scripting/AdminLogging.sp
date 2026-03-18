@@ -20,13 +20,18 @@ char g_sMap[PLATFORM_MAX_PATH];
 bool g_bLate = false;
 bool g_Plugin_ExtDiscord = false;
 bool g_Plugin_AutoRecorder = false;
+bool g_bNative_IsDemoRecording = false;
+bool g_bNative_GetDemoRecordCount = false;
+bool g_bNative_GetDemoRecordingTick = false;
+bool g_bNative_GetDemoRecordingTime = false;
+bool g_bNative_ExtendedDiscord_LogError = false;
 
 public Plugin myinfo = 
 {
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.8",
+	version = "1.3.9",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -57,22 +62,51 @@ public void OnAllPluginsLoaded()
 {
 	g_Plugin_AutoRecorder = LibraryExists("AutoRecorder");
 	g_Plugin_ExtDiscord = LibraryExists("ExtendedDiscord");
+
+	VerifyNatives();
 }
 
 public void OnLibraryAdded(const char[] sName)
 {
-	if (strcmp(sName, "AutoRecorder", false) == 0)
-		g_Plugin_AutoRecorder = true;
-	else if (strcmp(sName, "ExtendedDiscord", false) == 0)
-		g_Plugin_ExtDiscord = true;
+	HandleLibraryChange(sName, true);
 }
 
 public void OnLibraryRemoved(const char[] sName)
 {
-	if (strcmp(sName, "AutoRecorder", false) == 0)
-		g_Plugin_AutoRecorder = false;
-	else if (strcmp(sName, "ExtendedDiscord", false) == 0)
-		g_Plugin_ExtDiscord = false;
+	HandleLibraryChange(sName, false);
+}
+
+void HandleLibraryChange(const char[] name, bool isAdded = false)
+{
+	if (strcmp(name, "AutoRecorder", false) == 0)
+	{
+		g_Plugin_AutoRecorder = isAdded;
+		VerifyNative_AutoRecorder();
+	}
+	else if (strcmp(name, "ExtendedDiscord", false) == 0)
+	{
+		g_Plugin_ExtDiscord = isAdded;
+		VerifyNative_ExtendedDiscord();
+	}
+}
+
+stock void VerifyNatives()
+{
+	VerifyNative_AutoRecorder();
+	VerifyNative_ExtendedDiscord();
+}
+
+stock void VerifyNative_AutoRecorder()
+{
+	g_bNative_GetDemoRecordCount = g_Plugin_AutoRecorder && GetFeatureStatus(FeatureType_Native, "AutoRecorder_GetDemoRecordCount") == FeatureStatus_Available;
+	g_bNative_IsDemoRecording = g_Plugin_AutoRecorder && GetFeatureStatus(FeatureType_Native, "AutoRecorder_IsDemoRecording") == FeatureStatus_Available;
+	g_bNative_GetDemoRecordingTick = g_Plugin_AutoRecorder && GetFeatureStatus(FeatureType_Native, "AutoRecorder_GetDemoRecordingTick") == FeatureStatus_Available;
+	g_bNative_GetDemoRecordingTime = g_Plugin_AutoRecorder && GetFeatureStatus(FeatureType_Native, "AutoRecorder_GetDemoRecordingTime") == FeatureStatus_Available;
+}
+
+stock void VerifyNative_ExtendedDiscord()
+{
+	g_bNative_ExtendedDiscord_LogError = g_Plugin_ExtDiscord && GetFeatureStatus(FeatureType_Native, "ExtendedDiscord_LogError") == FeatureStatus_Available;
 }
 
 public void OnMapInit(const char[] mapName)
@@ -125,11 +159,16 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 		int iTick = -1;
 		int retValTime = -1;
 		#if defined _autorecorder_included
-		if (AutoRecorder_IsDemoRecording())
+		if (g_bNative_IsDemoRecording && AutoRecorder_IsDemoRecording())
 		{
-			iCount = AutoRecorder_GetDemoRecordCount();
-			iTick = AutoRecorder_GetDemoRecordingTick();
-			retValTime = AutoRecorder_GetDemoRecordingTime();
+			if (g_bNative_GetDemoRecordCount)
+				iCount = AutoRecorder_GetDemoRecordCount();
+
+			if (g_bNative_GetDemoRecordingTick)
+				iTick = AutoRecorder_GetDemoRecordingTick();
+
+			if (g_bNative_GetDemoRecordingTime)
+				retValTime = AutoRecorder_GetDemoRecordingTime();
 		}
 		if (retValTime == -1)
 			sDate = "N/A";
@@ -231,7 +270,7 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 			PrintToServer("[%s] Failed to send the webhook (ID: %d). Resending it in %0.1f seconds.. (%d/%d)", PLUGIN_NAME, iMsgIndex, fTimer, retries[iMsgIndex], g_cvWebhookRetry.IntValue);
 			return;
 		} else {
-			if (!g_Plugin_ExtDiscord)
+			if (!g_bNative_ExtendedDiscord_LogError)
 			{
 				LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries[iMsgIndex]);
 				LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
