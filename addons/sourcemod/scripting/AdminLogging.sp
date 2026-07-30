@@ -11,11 +11,19 @@
 
 #define PLUGIN_NAME "AdminLogging"
 #define MAX_RAMDOM_INT 10000
+#define DISCORD_MAX_CONTENT 2000
+#define DISCORD_CODEBLOCK_PREFIX "```txt\n"
+#define DISCORD_CODEBLOCK_SUFFIX "\n```"
+#define ADMINLOGGING_BUFFER_SIZE 4096
 
 ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername
 ConVar g_cvChannelType, g_cvThreadID;
 
+ArrayList g_hSendQueue = null;
+
 char g_sMap[PLATFORM_MAX_PATH];
+bool g_bQueueSending = false;
+char g_sQueueWebhookURL[WEBHOOK_URL_MAX_SIZE];
 
 bool g_bLate = false;
 bool g_Plugin_ExtDiscord = false;
@@ -31,7 +39,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.3.9",
+	version = "1.4.0",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -52,10 +60,24 @@ public void OnPluginStart()
 	/* Thread config */
 	g_cvThreadID = CreateConVar("sm_adminlogging_threadid", "0", "If thread_id is provided, the message will send in that thread.", FCVAR_PROTECTED);
 
+	delete g_hSendQueue;
+	g_hSendQueue = new ArrayList(ByteCountToCells(DISCORD_MAX_CONTENT + 1));
+
 	AutoExecConfig(true);
 
 	if (g_bLate)
 		GetCurrentMap(g_sMap, sizeof(g_sMap));
+}
+
+public void OnPluginEnd()
+{
+	g_bQueueSending = false;
+
+	if (g_hSendQueue != null)
+	{
+		delete g_hSendQueue;
+		g_hSendQueue = null;
+	}
 }
 
 public void OnAllPluginsLoaded()
@@ -114,6 +136,175 @@ public void OnMapInit(const char[] mapName)
 	FormatEx(g_sMap, sizeof(g_sMap), mapName);
 }
 
+void QueueOutgoingMessage(const char[] message)
+{
+	if (g_hSendQueue == null || !message[0])
+		return;
+
+	g_hSendQueue.PushString(message);
+}
+
+void SendNextQueuedMessage()
+{
+	if (!g_bQueueSending || g_hSendQueue == null)
+		return;
+
+	if (g_hSendQueue.Length <= 0)
+	{
+		g_bQueueSending = false;
+		return;
+	}
+
+	char message[DISCORD_MAX_CONTENT + 1];
+	g_hSendQueue.GetString(0, message, sizeof(message));
+	g_hSendQueue.Erase(0);
+
+	SendWebHook(message, g_sQueueWebhookURL);
+}
+
+void StartQueueDispatch(const char[] webhookUrl)
+{
+	strcopy(g_sQueueWebhookURL, sizeof(g_sQueueWebhookURL), webhookUrl);
+	g_bQueueSending = true;
+	SendNextQueuedMessage();
+}
+
+void QueueDiscordCodeBlockChunked(const char[] header, const char[] content)
+{
+	int maxChunkLen = DISCORD_MAX_CONTENT - strlen(header) - 1 - strlen(DISCORD_CODEBLOCK_PREFIX) - strlen(DISCORD_CODEBLOCK_SUFFIX);
+	if (maxChunkLen <= 0)
+	{
+		QueueOutgoingMessage(header);
+		return;
+	}
+
+	int totalLen = strlen(content);
+	char pending[DISCORD_MAX_CONTENT + 1];
+	pending[0] = '\0';
+	int pendingLen = 0;
+	int lineStart = 0;
+
+	while (lineStart <= totalLen)
+	{
+		int lineEnd = lineStart;
+		while (lineEnd < totalLen && content[lineEnd] != '\n')
+			lineEnd++;
+
+		int lineLen = lineEnd - lineStart;
+		bool hasNextLine = (lineEnd < totalLen);
+
+		if (lineLen <= maxChunkLen)
+		{
+			bool needNewline = (pendingLen > 0);
+			int additional = lineLen + (needNewline ? 1 : 0);
+
+			if (pendingLen > 0 && pendingLen + additional > maxChunkLen)
+			{
+				char wrappedFlush[DISCORD_MAX_CONTENT + 1];
+				FormatEx(wrappedFlush, sizeof(wrappedFlush), "%s\n%s%s%s", header, DISCORD_CODEBLOCK_PREFIX, pending, DISCORD_CODEBLOCK_SUFFIX);
+				QueueOutgoingMessage(wrappedFlush);
+				pending[0] = '\0';
+				pendingLen = 0;
+				needNewline = false;
+			}
+
+			if (needNewline)
+			{
+				pending[pendingLen] = '\n';
+				pendingLen++;
+			}
+
+			for (int i = 0; i < lineLen; i++)
+				pending[pendingLen + i] = content[lineStart + i];
+
+			pendingLen += lineLen;
+			pending[pendingLen] = '\0';
+		}
+		else
+		{
+			if (pendingLen > 0)
+			{
+				char wrappedFlush[DISCORD_MAX_CONTENT + 1];
+				FormatEx(wrappedFlush, sizeof(wrappedFlush), "%s\n%s%s%s", header, DISCORD_CODEBLOCK_PREFIX, pending, DISCORD_CODEBLOCK_SUFFIX);
+				QueueOutgoingMessage(wrappedFlush);
+				pending[0] = '\0';
+				pendingLen = 0;
+			}
+
+			int offset = 0;
+			while (offset < lineLen)
+			{
+				int partLen = lineLen - offset;
+				if (partLen > maxChunkLen)
+					partLen = maxChunkLen;
+
+				char part[DISCORD_MAX_CONTENT + 1];
+				for (int i = 0; i < partLen; i++)
+					part[i] = content[lineStart + offset + i];
+				part[partLen] = '\0';
+
+				char wrappedPart[DISCORD_MAX_CONTENT + 1];
+				FormatEx(wrappedPart, sizeof(wrappedPart), "%s\n%s%s%s", header, DISCORD_CODEBLOCK_PREFIX, part, DISCORD_CODEBLOCK_SUFFIX);
+				QueueOutgoingMessage(wrappedPart);
+
+				offset += partLen;
+			}
+		}
+
+		if (!hasNextLine)
+			break;
+
+		lineStart = lineEnd + 1;
+	}
+
+	if (pendingLen > 0)
+	{
+		char wrapped[DISCORD_MAX_CONTENT + 1];
+		FormatEx(wrapped, sizeof(wrapped), "%s\n%s%s%s", header, DISCORD_CODEBLOCK_PREFIX, pending, DISCORD_CODEBLOCK_SUFFIX);
+		QueueOutgoingMessage(wrapped);
+	}
+}
+
+void BuildAdminLogHeader(const char[] sTime, char[] sHeader, int maxlen)
+{
+	char sStart[64];
+	int iCount = -1;
+	int iTick = -1;
+	int retValTime = -1;
+
+	if (g_Plugin_AutoRecorder)
+	{
+		#if defined _autorecorder_included
+		if (g_bNative_IsDemoRecording && AutoRecorder_IsDemoRecording())
+		{
+			if (g_bNative_GetDemoRecordCount)
+				iCount = AutoRecorder_GetDemoRecordCount();
+
+			if (g_bNative_GetDemoRecordingTick)
+				iTick = AutoRecorder_GetDemoRecordingTick();
+
+			if (g_bNative_GetDemoRecordingTime)
+				retValTime = AutoRecorder_GetDemoRecordingTime();
+		}
+		#endif
+	}
+
+	if (retValTime >= 0)
+		FormatTime(sStart, sizeof(sStart), "%d.%m.%Y @ %H:%M", retValTime);
+	else
+		strcopy(sStart, sizeof(sStart), "N/A");
+
+	if (iCount >= 0 || iTick >= 0 || retValTime >= 0)
+	{
+		FormatEx(sHeader, maxlen, "`%s` *(CT: %d | T: %d) - %s* - Demo: %d @ Tick: ≈ %d *(Started %s)*",
+			g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, iCount, iTick, sStart);
+		return;
+	}
+
+	FormatEx(sHeader, maxlen, "`%s` *(CT: %d | T: %d) - %s* - Demo: N/A",
+		g_sMap, GetTeamScore(3), GetTeamScore(2), sTime);
+}
+
 public Action OnLogAction(Handle source, Identity ident, int client, int target, const char[] message)
 {
 	// If this user has no admin and is NOT the server
@@ -129,66 +320,42 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 		return Plugin_Handled;
 	}
 
+	if (g_hSendQueue == null)
+	{
+		LogError("Send queue is not initialized.");
+		return Plugin_Handled;
+	}
+
 	// Get the admin ID
-	AdminId adminID;
-	
+	AdminId adminID = GetUserAdmin(client);
+
 	if (adminID == INVALID_ADMIN_ID && client > 0)
 		return Plugin_Continue;
 
-	char sEscapedMessage[WEBHOOK_MSG_MAX_SIZE];
+	char sEscapedMessage[ADMINLOGGING_BUFFER_SIZE];
 	FormatEx(sEscapedMessage, sizeof(sEscapedMessage), "%s", message);
-	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "`", "\\`");
-	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "*", "\\*");
-	// ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "_", "\\_"); // Not used because maps can have "_"
-	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "~", "\\~");
-	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "|", "\\|");
+	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "`", "'");
 	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "> ", ">");
 	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "/", "୵"); // Prevent URLs from being embedded
 	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "@", "ⓐ"); // Because it is a webhook, it bypasses the permission
 	ReplaceString(sEscapedMessage, sizeof(sEscapedMessage), "\"", ""); // Prevent messages from being cut off
 
-	char sMessage[WEBHOOK_MSG_MAX_SIZE];
 	char sTime[64];
 	int iTime = GetTime();
 	FormatTime(sTime, sizeof(sTime), "%m/%d/%Y @ %H:%M:%S", iTime);
 
-	if (g_Plugin_AutoRecorder)
-	{
-		char sDate[32];
-		int iCount = -1;
-		int iTick = -1;
-		int retValTime = -1;
-		#if defined _autorecorder_included
-		if (g_bNative_IsDemoRecording && AutoRecorder_IsDemoRecording())
-		{
-			if (g_bNative_GetDemoRecordCount)
-				iCount = AutoRecorder_GetDemoRecordCount();
+	char sHeader[512];
+	BuildAdminLogHeader(sTime, sHeader, sizeof(sHeader));
 
-			if (g_bNative_GetDemoRecordingTick)
-				iTick = AutoRecorder_GetDemoRecordingTick();
+	QueueDiscordCodeBlockChunked(sHeader, sEscapedMessage);
 
-			if (g_bNative_GetDemoRecordingTime)
-				retValTime = AutoRecorder_GetDemoRecordingTime();
-		}
-		if (retValTime == -1)
-			sDate = "N/A";
-		else
-			FormatTime(sDate, sizeof(sDate), "%d.%m.%Y @ %H:%M", retValTime);
-		#endif
-		Format(sMessage, sizeof(sMessage), "%s *(CT: %d | T: %d) - %s* - Demo: %d @ Tick: ≈ %d *(Started %s)* ```%s```",
-			g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, iCount, iTick, sDate, sEscapedMessage);
-	}
-	else
-	{
-		Format(sMessage, sizeof(sMessage), "%s *(CT: %d | T: %d) - %s* ```%s```", g_sMap, GetTeamScore(3), GetTeamScore(2), sTime, sEscapedMessage);
-	}
-
-	SendWebHook(sMessage, sWebhookURL);
+	if (!g_bQueueSending)
+		StartQueueDispatch(sWebhookURL);
 
 	return Plugin_Continue;
 }
 
-stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE], char sWebhookURL[WEBHOOK_URL_MAX_SIZE], int iMsgIndex = -1, int iRetries = 0)
+stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], char sWebhookURL[WEBHOOK_URL_MAX_SIZE], int iMsgIndex = -1, int iRetries = 0)
 {
 	/* Webhook UserName */
 	char sName[128];
@@ -248,7 +415,7 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 	bool IsThreadReply = pack.ReadCell();
 
-	char sMessage[WEBHOOK_MSG_MAX_SIZE], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
+	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
 	pack.ReadString(sMessage, sizeof(sMessage));
 	pack.ReadString(sWebhookURL, sizeof(sWebhookURL));
 
@@ -286,11 +453,12 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 	}
 
 	retries[iMsgIndex] = 0;
+	SendNextQueuedMessage();
 }
 
 public Action Timer_ResendWebhook(Handle timer, DataPack Datapack)
 {
-	char sMessage[WEBHOOK_MSG_MAX_SIZE], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
+	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
 
 	Datapack.Reset();
 	Datapack.ReadString(sMessage, sizeof(sMessage));
