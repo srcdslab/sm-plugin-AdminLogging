@@ -39,7 +39,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.4.1",
+	version = "1.4.2",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
