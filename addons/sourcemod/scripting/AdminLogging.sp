@@ -312,13 +312,13 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	if(!g_sWebhookURL[0])
 	{
 		LogError("No webhook found or specified.");
-		return Plugin_Handled;
+		return Plugin_Continue;
 	}
 
 	if (g_hSendQueue == null)
 	{
 		LogError("Send queue is not initialized.");
-		return Plugin_Handled;
+		return Plugin_Continue;
 	}
 
 	// If this user has no admin and is NOT the server
