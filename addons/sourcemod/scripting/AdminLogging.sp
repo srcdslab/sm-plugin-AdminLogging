@@ -12,7 +12,7 @@
 #define PLUGIN_NAME "AdminLogging"
 #define MAX_RAMDOM_INT 10000
 #define DISCORD_MAX_CONTENT 2000
-#define DISCORD_CODEBLOCK_PREFIX "```txt\n"
+#define DISCORD_CODEBLOCK_PREFIX "```\n"
 #define DISCORD_CODEBLOCK_SUFFIX "\n```"
 #define ADMINLOGGING_BUFFER_SIZE 4096
 
@@ -39,7 +39,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.4.1",
+	version = "1.4.2",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
