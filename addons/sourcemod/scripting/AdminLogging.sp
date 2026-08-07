@@ -22,8 +22,8 @@ ConVar g_cvChannelType, g_cvThreadID;
 ArrayList g_hSendQueue = null;
 
 char g_sMap[PLATFORM_MAX_PATH];
+char g_sWebhookURL[WEBHOOK_URL_MAX_SIZE];
 bool g_bQueueSending = false;
-char g_sQueueWebhookURL[WEBHOOK_URL_MAX_SIZE];
 
 bool g_bLate = false;
 bool g_Plugin_ExtDiscord = false;
@@ -39,7 +39,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.4.0",
+	version = "1.4.1",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -65,19 +65,22 @@ public void OnPluginStart()
 
 	AutoExecConfig(true);
 
+	g_cvWebhook.AddChangeHook(OnWebhookConVarChanged);
+	g_cvWebhook.GetString(g_sWebhookURL, sizeof(g_sWebhookURL));
+
 	if (g_bLate)
 		GetCurrentMap(g_sMap, sizeof(g_sMap));
+}
+
+public void OnWebhookConVarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+	strcopy(g_sWebhookURL, sizeof(g_sWebhookURL), newValue);
 }
 
 public void OnPluginEnd()
 {
 	g_bQueueSending = false;
-
-	if (g_hSendQueue != null)
-	{
-		delete g_hSendQueue;
-		g_hSendQueue = null;
-	}
+	delete g_hSendQueue;
 }
 
 public void OnAllPluginsLoaded()
@@ -159,12 +162,11 @@ void SendNextQueuedMessage()
 	g_hSendQueue.GetString(0, message, sizeof(message));
 	g_hSendQueue.Erase(0);
 
-	SendWebHook(message, g_sQueueWebhookURL);
+	SendWebHook(message);
 }
 
-void StartQueueDispatch(const char[] webhookUrl)
+void StartQueueDispatch()
 {
-	strcopy(g_sQueueWebhookURL, sizeof(g_sQueueWebhookURL), webhookUrl);
 	g_bQueueSending = true;
 	SendNextQueuedMessage();
 }
@@ -307,29 +309,28 @@ void BuildAdminLogHeader(const char[] sTime, char[] sHeader, int maxlen)
 
 public Action OnLogAction(Handle source, Identity ident, int client, int target, const char[] message)
 {
-	// If this user has no admin and is NOT the server
-	// let the core log this
-	if(client == 0) return Plugin_Continue;
-
-	char sWebhookURL[WEBHOOK_URL_MAX_SIZE];
-	g_cvWebhook.GetString(sWebhookURL, sizeof sWebhookURL);
-
-	if(!sWebhookURL[0])
+	if(!g_sWebhookURL[0])
 	{
-		LogError("[%s] No webhook found or specified.", PLUGIN_NAME);
-		return Plugin_Handled;
+		LogError("No webhook found or specified.");
+		return Plugin_Continue;
 	}
 
 	if (g_hSendQueue == null)
 	{
 		LogError("Send queue is not initialized.");
-		return Plugin_Handled;
+		return Plugin_Continue;
 	}
 
-	// Get the admin ID
-	AdminId adminID = GetUserAdmin(client);
+	// If this user has no admin and is NOT the server
+	// let the core log this
 
-	if (adminID == INVALID_ADMIN_ID && client > 0)
+	bool isServer = (client < 0 || client == 0);
+	bool isValidClient = (!isServer && client <= MaxClients && IsClientConnected(client));
+
+	if (!isServer && !isValidClient)
+		return Plugin_Continue;
+
+	if (!isServer && GetUserAdmin(client) == INVALID_ADMIN_ID)
 		return Plugin_Continue;
 
 	char sEscapedMessage[ADMINLOGGING_BUFFER_SIZE];
@@ -350,12 +351,12 @@ public Action OnLogAction(Handle source, Identity ident, int client, int target,
 	QueueDiscordCodeBlockChunked(sHeader, sEscapedMessage);
 
 	if (!g_bQueueSending)
-		StartQueueDispatch(sWebhookURL);
+		StartQueueDispatch();
 
 	return Plugin_Continue;
 }
 
-stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], char sWebhookURL[WEBHOOK_URL_MAX_SIZE], int iMsgIndex = -1, int iRetries = 0)
+stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], int iMsgIndex = -1, int iRetries = 0)
 {
 	/* Webhook UserName */
 	char sName[128];
@@ -374,7 +375,7 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], char sWebhookURL
 
 	if (IsThread && !sThreadID[0])
 	{
-		LogError("[%s] ThreadID not found or specified.", PLUGIN_NAME);
+		LogError("ThreadID not found or specified.");
 		delete webhook;
 		return;
 	}
@@ -398,9 +399,8 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], char sWebhookURL
 		pack.WriteCell(0);
 
 	pack.WriteString(sMessage);
-	pack.WriteString(sWebhookURL);
 
-	webhook.Execute(sWebhookURL, OnWebHookExecuted, pack, sThreadID);
+	webhook.Execute(g_sWebhookURL, OnWebHookExecuted, pack, sThreadID);
 	delete webhook;
 }
 
@@ -415,9 +415,8 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 	bool IsThreadReply = pack.ReadCell();
 
-	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
+	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1];
 	pack.ReadString(sMessage, sizeof(sMessage));
-	pack.ReadString(sWebhookURL, sizeof(sWebhookURL));
 
 	delete pack;
 
@@ -429,7 +428,6 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 			DataPack Datapack = new DataPack();
 			Datapack.WriteString(sMessage);
-			Datapack.WriteString(sWebhookURL);
 			Datapack.WriteCell(iMsgIndex);
 			Datapack.WriteCell(retries[iMsgIndex]);
 
@@ -439,14 +437,14 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 		} else {
 			if (!g_bNative_ExtendedDiscord_LogError)
 			{
-				LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries[iMsgIndex]);
-				LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
+				LogError("Failed to send the webhook after %d retries, aborting.", retries[iMsgIndex]);
+				LogError("Failed message : %s", sMessage);
 			}
 		#if defined _extendeddiscord_included
 			else
 			{
-				ExtendedDiscord_LogError("[%s] Failed to send the webhook after %d retries, aborting.", PLUGIN_NAME, retries[iMsgIndex]);
-				ExtendedDiscord_LogError("[%s] Failed message : %s", PLUGIN_NAME, sMessage);
+				ExtendedDiscord_LogError("Failed to send the webhook after %d retries, aborting.", retries[iMsgIndex]);
+				ExtendedDiscord_LogError("Failed message : %s", sMessage);
 			}
 		#endif
 		}
@@ -458,15 +456,14 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 
 public Action Timer_ResendWebhook(Handle timer, DataPack Datapack)
 {
-	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], sWebhookURL[WEBHOOK_URL_MAX_SIZE];
+	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1];
 
 	Datapack.Reset();
 	Datapack.ReadString(sMessage, sizeof(sMessage));
-	Datapack.ReadString(sWebhookURL, sizeof(sWebhookURL));
 	int iMsgIndex = Datapack.ReadCell();
 	int iRetries = Datapack.ReadCell();
 	delete Datapack;
 
-	SendWebHook(sMessage, sWebhookURL, iMsgIndex, iRetries);
+	SendWebHook(sMessage, iMsgIndex, iRetries);
 	return Plugin_Stop;
 }
