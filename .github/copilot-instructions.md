@@ -11,47 +11,47 @@ This repository contains the **AdminLogging** SourcePawn plugin for SourceMod, w
 
 - **Language**: SourcePawn
 - **Platform**: SourceMod 1.11+ (minimum), 1.12+ recommended
-- **Build System**: SourceKnight 0.2
-- **Compiler**: SourcePawn compiler via SourceKnight
+- **Build System**: Native GitHub Actions workflow (`.github/workflows/ci.yml`)
+- **Compiler**: SourcePawn compiler (spcomp), installed via `rumblefrog/setup-sp`
 - **CI/CD**: GitHub Actions with automated builds and releases
 
 ## Dependencies
 
-The plugin has the following dependencies managed via `sourceknight.yaml`:
+The plugin has the following dependencies, cloned and compiled against directly in `.github/workflows/ci.yml`:
 
-1. **sourcemod** (1.11.0-git6934): Core SourceMod framework
-2. **discordwebapi**: Required for Discord webhook functionality
-3. **AutoRecorder** (optional): Provides demo recording information in logs
-4. **Extended-Discord** (optional): Enhanced Discord logging for error messages
+1. **sourcemod** (1.12.x): Core SourceMod framework, provided by the CI compiler setup step
+2. **discordwebapi** ([sm-plugin-DiscordWebhookAPI](https://github.com/srcdslab/sm-plugin-DiscordWebhookAPI)): Required for Discord webhook functionality
+3. **AutoRecorder** ([sm-plugin-AutoRecorder](https://github.com/srcdslab/sm-plugin-AutoRecorder), optional): Provides demo recording information in logs
+4. **Extended-Discord** ([sm-plugin-Extended-Discord](https://github.com/srcdslab/sm-plugin-Extended-Discord), optional): Enhanced Discord logging for error messages
 
 ### Dependency Management
-- Dependencies are automatically downloaded and configured by SourceKnight
+- The CI workflow shallow-clones each dependency repo and copies its include files into `addons/sourcemod/scripting/include/` before compiling
 - Optional dependencies use `#tryinclude` and library existence checks
 - Plugin gracefully handles missing optional dependencies
 
 ## Build System
 
-### SourceKnight Configuration
-The project uses SourceKnight build system configured in `sourceknight.yaml`:
+### GitHub Actions Configuration
+The project builds via `.github/workflows/ci.yml`, which:
 
-```yaml
-# Key configuration elements:
-- Root: /
-- Output: /addons/sourcemod/plugins  
-- Target: AdminLogging
+```
+- Checks out the repo
+- Installs spcomp via rumblefrog/setup-sp (SourceMod 1.12.x)
+- Clones each dependency and copies its includes into addons/sourcemod/scripting/include
+- Compiles addons/sourcemod/scripting/AdminLogging.sp -> addons/sourcemod/plugins/AdminLogging.smx
 ```
 
 ### Build Commands
 ```bash
-# Build using SourceKnight (via GitHub Actions)
-# Local development requires SourceKnight installation
+# Local build (after fetching the includes listed above into addons/sourcemod/scripting/include):
+spcomp -i addons/sourcemod/scripting/include -o addons/sourcemod/plugins/AdminLogging.smx addons/sourcemod/scripting/AdminLogging.sp
 ```
 
 ### CI/CD Pipeline
 - **Trigger**: Push, PR, or manual dispatch
-- **Platform**: Ubuntu 24.04
+- **Platform**: Ubuntu latest
 - **Process**: Build → Package → Release
-- **Artifacts**: Compiled `.smx` files and dependencies
+- **Artifacts**: Compiled `.smx` files
 - **Releases**: Automatic tagging and release creation
 
 ## Code Standards & Style
@@ -129,7 +129,6 @@ The project uses SourceKnight build system configured in `sourceknight.yaml`:
 │   └── copilot-instructions.md   # This file
 ├── addons/sourcemod/scripting/
 │   └── AdminLogging.sp           # Main plugin source
-├── sourceknight.yaml             # Build configuration
 └── .gitignore                    # Git ignore rules
 ```
 
@@ -196,10 +195,10 @@ if (!webhook_success) {
 ## Troubleshooting
 
 ### Common Issues
-1. **Missing Dependencies**: Check SourceKnight dependency resolution
+1. **Missing Dependencies**: Check the CI workflow's dependency-clone step ran successfully
 2. **Webhook Failures**: Verify URL format and Discord permissions
 3. **Thread Replies**: Ensure thread ID is valid and accessible
-4. **Build Failures**: Check SourceKnight version and dependency availability
+4. **Build Failures**: Check the SourcePawn compiler version and dependency include availability
 
 ### Debugging
 - Enable debug logging for webhook responses
