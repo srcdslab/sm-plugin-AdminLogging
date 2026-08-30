@@ -24,6 +24,7 @@ ArrayList g_hSendQueue = null;
 char g_sMap[PLATFORM_MAX_PATH];
 char g_sWebhookURL[WEBHOOK_URL_MAX_SIZE];
 bool g_bQueueSending = false;
+bool g_bConfigsExecuted = false;
 
 bool g_bLate = false;
 bool g_Plugin_ExtDiscord = false;
@@ -39,7 +40,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.4.2",
+	version = "1.4.3",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -70,6 +71,13 @@ public void OnPluginStart()
 
 	if (g_bLate)
 		GetCurrentMap(g_sMap, sizeof(g_sMap));
+}
+
+public void OnConfigsExecuted()
+{
+	// See https://github.com/srcdslab/sm-plugin-AdminLogging/issues/41
+	g_cvWebhook.GetString(g_sWebhookURL, sizeof(g_sWebhookURL));
+	g_bConfigsExecuted = true;
 }
 
 public void OnWebhookConVarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
@@ -309,6 +317,9 @@ void BuildAdminLogHeader(const char[] sTime, char[] sHeader, int maxlen)
 
 public Action OnLogAction(Handle source, Identity ident, int client, int target, const char[] message)
 {
+	if (!g_bConfigsExecuted)
+		return Plugin_Continue;
+
 	if(!g_sWebhookURL[0])
 	{
 		LogError("No webhook found or specified.");
