@@ -16,8 +16,8 @@
 #define DISCORD_CODEBLOCK_SUFFIX "\n```"
 #define ADMINLOGGING_BUFFER_SIZE 4096
 
-ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername
-ConVar g_cvChannelType, g_cvThreadID;
+ConVar g_cvWebhook, g_cvWebhookRetry, g_cvAvatar, g_cvUsername;
+ConVar g_cvThreadID;
 
 ArrayList g_hSendQueue = null;
 
@@ -40,7 +40,7 @@ public Plugin myinfo =
 	name = PLUGIN_NAME,
 	author = "inGame, maxime1907, .Rushaway",
 	description = "Admin logs saved to Discord",
-	version = "1.4.3",
+	version = "1.5.0",
 	url = "https://github.com/srcdslab/sm-plugin-AdminLogging"
 };
 
@@ -56,7 +56,6 @@ public void OnPluginStart()
 	g_cvWebhookRetry = CreateConVar("sm_adminlogging_webhook_retry", "3", "Number of retries if webhook fails.", FCVAR_PROTECTED);
 	g_cvAvatar = CreateConVar("sm_adminlogging_avatar", "https://avatars.githubusercontent.com/u/110772618?s=200&v=4", "URL to Avatar image.");
 	g_cvUsername = CreateConVar("sm_adminlogging_username", "Admin Logging", "Discord username.");
-	g_cvChannelType = CreateConVar("sm_adminlogging_channel_type", "0", "Type of your channel: (1 = Thread, 0 = Classic Text channel");
 
 	/* Thread config */
 	g_cvThreadID = CreateConVar("sm_adminlogging_threadid", "0", "If thread_id is provided, the message will send in that thread.", FCVAR_PROTECTED);
@@ -382,15 +381,6 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], int iMsgIndex = 
 	char sThreadID[32];
 	g_cvThreadID.GetString(sThreadID, sizeof sThreadID);
 
-	bool IsThread = g_cvChannelType.BoolValue;
-
-	if (IsThread && !sThreadID[0])
-	{
-		LogError("ThreadID not found or specified.");
-		delete webhook;
-		return;
-	}
-
 	if (strlen(sName) > 0)
 		webhook.SetUsername(sName);
 	if (strlen(sAvatar) > 0)
@@ -403,11 +393,6 @@ stock void SendWebHook(char sMessage[WEBHOOK_MSG_MAX_SIZE + 1], int iMsgIndex = 
 
 	pack.WriteCell(iMsgIndex);
 	pack.WriteCell(iRetries);
-
-	if (IsThread && strlen(sThreadID) > 0)
-		pack.WriteCell(1);
-	else
-		pack.WriteCell(0);
 
 	pack.WriteString(sMessage);
 
@@ -424,14 +409,12 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 	int iRetries = pack.ReadCell();
 	retries[iMsgIndex] = iRetries;
 
-	bool IsThreadReply = pack.ReadCell();
-
 	char sMessage[WEBHOOK_MSG_MAX_SIZE + 1];
 	pack.ReadString(sMessage, sizeof(sMessage));
 
 	delete pack;
 
-	if ((!IsThreadReply && response.Status != HTTPStatus_OK) || (IsThreadReply && response.Status != HTTPStatus_NoContent))
+	if (response.Status != HTTPStatus_OK && response.Status != HTTPStatus_NoContent)
 	{
 		if (retries[iMsgIndex] < g_cvWebhookRetry.IntValue) {
 			retries[iMsgIndex]++;
@@ -443,18 +426,18 @@ public void OnWebHookExecuted(HTTPResponse response, DataPack pack)
 			Datapack.WriteCell(retries[iMsgIndex]);
 
 			CreateTimer(fTimer, Timer_ResendWebhook, Datapack);
-			PrintToServer("[%s] Failed to send the webhook (ID: %d). Resending it in %0.1f seconds.. (%d/%d)", PLUGIN_NAME, iMsgIndex, fTimer, retries[iMsgIndex], g_cvWebhookRetry.IntValue);
+			PrintToServer("[%s] Failed to send the webhook (ID: %d | HTTP %d). Resending it in %0.1f seconds.. (%d/%d)", PLUGIN_NAME, iMsgIndex, view_as<int>(response.Status), fTimer, retries[iMsgIndex], g_cvWebhookRetry.IntValue);
 			return;
 		} else {
 			if (!g_bNative_ExtendedDiscord_LogError)
 			{
-				LogError("Failed to send the webhook after %d retries, aborting.", retries[iMsgIndex]);
+				LogError("Failed to send the webhook after %d retries (last HTTP status: %d), aborting.", retries[iMsgIndex], view_as<int>(response.Status));
 				LogError("Failed message : %s", sMessage);
 			}
 		#if defined _extendeddiscord_included
 			else
 			{
-				ExtendedDiscord_LogError("Failed to send the webhook after %d retries, aborting.", retries[iMsgIndex]);
+				ExtendedDiscord_LogError("Failed to send the webhook after %d retries (last HTTP status: %d), aborting.", retries[iMsgIndex], view_as<int>(response.Status));
 				ExtendedDiscord_LogError("Failed message : %s", sMessage);
 			}
 		#endif
